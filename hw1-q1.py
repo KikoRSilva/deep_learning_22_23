@@ -72,14 +72,29 @@ class Perceptron(LinearModel):
 
 
 class LogisticRegression(LinearModel):
+    
+    def one_hot_vector(self, y):
+        n_classes = self.W.shape[0]
+        one_hot = np.zeros((n_classes, 1))
+        one_hot[y] = 1
+        return one_hot
+
+    def softmax(self, net):
+        return np.exp(net) / np.sum(np.exp(net))
+
     def update_weight(self, x_i, y_i, learning_rate=0.001):
         """
         x_i (n_features): a single training example
         y_i: the gold label for that example
         learning_rate (float): keep it at the default value for your plots
         """
-        # Q1.1b
-        raise NotImplementedError
+
+        class_probs = self.softmax(np.dot(self.W, x_i.T)[:, None])
+        y_one_hot = self.one_hot_vector(y_i)
+
+        grad_i = (y_one_hot - class_probs) * x_i[None, :]
+
+        self.W += learning_rate * grad_i
 
 
 class MLP(object):
