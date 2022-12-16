@@ -17,6 +17,9 @@ def configure_seed(seed):
     random.seed(seed)
     np.random.seed(seed)
 
+def softmax(x):
+    f = x - np.max(x)
+    return np.exp(f) / np.sum(np.exp(f))
 
 class LinearModel(object):
     def __init__(self, n_classes, n_features, **kwargs):
@@ -79,9 +82,6 @@ class LogisticRegression(LinearModel):
         one_hot[y] = 1
         return one_hot
 
-    def softmax(self, net):
-        return np.exp(net) / np.sum(np.exp(net))
-
     def update_weight(self, x_i, y_i, learning_rate=0.001):
         """
         x_i (n_features): a single training example
@@ -89,7 +89,7 @@ class LogisticRegression(LinearModel):
         learning_rate (float): keep it at the default value for your plots
         """
 
-        class_probs = self.softmax(np.dot(self.W, x_i.T)[:, None])
+        class_probs = softmax(np.dot(self.W, x_i.T)[:, None])
         y_one_hot = self.one_hot_vector(y_i)
 
         grad_i = (y_one_hot - class_probs) * x_i[None, :]
@@ -97,19 +97,49 @@ class LogisticRegression(LinearModel):
         self.W += learning_rate * grad_i
 
 
+
 class MLP(object):
     # Q3.2b. This MLP skeleton code allows the MLP to be used in place of the
     # linear models with no changes to the training loop or evaluation code
     # in main().
-    def __init__(self, n_classes, n_features, hidden_size):
+    def __init__(self, n_classes, n_features, hidden_size, n_hidden_layers):
         # Initialize an MLP with a single hidden layer.
-        raise NotImplementedError
+        struct_size = [n_features] + [hidden_size for _ in range(n_hidden_layers)] + [n_classes]
+
+        self.n_layers = len(struct_size) - 1
+        self.weights = []
+        self.biases = []
+        for l in range(self.n_layers):
+            self.weights.append(np.random.normal(loc=0.1, scale=0.1, size=(struct_size[l+1], struct_size[l])))
+            self.biases.append(np.zeros(struct_size[l+1]))
+
+        #self.g = lambda z: np.maximum(0, z)                 # relu activation function for hidden layers
+        self.g = np.tanh
+        self.d_g = lambda z: (z > 0) * 1                    # derivate for g
+        self.o = softmax                                    # softmax activation function for output layer
+
+        self.loss = lambda y, prd_probs: -y.dot(np.log(prd_probs))  # cross-entropy loss fuction
+        self.grad_loss = lambda y, prd_probs: prd_probs - y         # gradient of this loss function
+
 
     def predict(self, X):
         # Compute the forward pass of the network. At prediction time, there is
         # no need to save the values of hidden nodes, whereas this is required
         # at training time.
-        raise NotImplementedError
+
+        prd_labels = []
+        for x_i in X:
+            h = x_i
+            for l in range(self.n_layers - 1):
+                z = np.dot(self.weights[l], h) + self.biases[l]
+                h = self.g(z)
+            z_output = np.dot(self.weights[-1], h) + self.biases[-1]
+            prd_probs = self.o(z_output)
+            prd_labels.append(prd_probs)
+        prd_labels = np.array(prd_labels).T
+        prd_labels = prd_labels.argmax(axis=0)
+        
+        return prd_labels
 
     def evaluate(self, X, y):
         """
@@ -123,8 +153,36 @@ class MLP(object):
         return n_correct / n_possible
 
     def train_epoch(self, X, y, learning_rate=0.001):
-        raise NotImplementedError
 
+        for x_i, y_i in zip(X, y):
+            # FEED-FORWARD PROPAGATION
+            hidden_values = []  # z and h pairs
+            for l in range(self.n_layers - 1):
+                z = np.dot(self.weights[l], hidden_values[l][1] if l > 0 else x_i) + self.biases[l]
+                hidden_values.append((z, self.g(z)))
+            z_output = np.dot(self.weights[-1], hidden_values[-1][1]) + self.biases[-1]
+            prd_probs = self.o(z_output)
+            # error = self.loss(y_i, prd_probs)
+
+
+            # BACKWARD PROPAGATION
+            grad_z = self.grad_loss(y_i, prd_probs)
+
+            for l in range(self.n_layers - 1, -1, -1):
+                h = x_i if l == 0 else hidden_values[l-1][1]
+
+                grad_w = np.dot(grad_z[:, None], h[:, None].T)
+                grad_b = grad_z
+
+                if l > 0:
+                    grad_h = np.dot(self.weights[l].T, grad_z)
+                    grad_z = grad_h * (1-h**2)  # derivate for relu does not work
+
+
+                self.weights[l] -= learning_rate * grad_w
+                self.biases[l] -= learning_rate * grad_b
+
+            
 
 def plot(epochs, valid_accs, test_accs):
     plt.xlabel('Epoch')
