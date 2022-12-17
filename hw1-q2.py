@@ -29,13 +29,14 @@ class LogisticRegression(nn.Module):
         super().__init__()
         # In a pytorch module, the declarations of layers needs to come after
         # the super __init__ line, otherwise the magic doesn't work.
+        self.linear = nn.Linear(n_features, n_classes, bias=True)
 
     def forward(self, x, **kwargs):
         """
         x (batch_size x n_features): a batch of training examples
 
         Every subclass of nn.Module needs to have a forward() method. forward()
-        describes how the module computes the forward pass. In a log-lineear
+        describes how the module computes the forward pass. In a log-linear
         model like this, for example, forward() needs to compute the logits
         y = Wx + b, and return y (you don't need to worry about taking the
         softmax of y because nn.CrossEntropyLoss does that for you).
@@ -44,7 +45,8 @@ class LogisticRegression(nn.Module):
         forward pass -- this is enough for it to figure out how to do the
         backward pass.
         """
-        raise NotImplementedError
+        y = self.linear(x)
+        return y
 
 
 # Q2.2
@@ -96,7 +98,23 @@ def train_batch(X, y, model, optimizer, criterion, **kwargs):
     This function should return the loss (tip: call loss.item()) to get the
     loss as a numerical value that is not part of the computation graph.
     """
-    raise NotImplementedError
+
+    # Resets parameters' gradients
+    optimizer.zero_grad()
+
+    # Forward pass (obtain scores)
+    y_hat = model.forward(X)
+
+    # Calculates error value
+    loss = criterion(y_hat, y)
+
+    # Sets the model to backward pass the loss
+    loss.backward()
+
+    # Updates weights and biases with the chosen optimizer
+    optimizer.step()
+
+    return loss.item()
 
 
 def predict(model, X):
