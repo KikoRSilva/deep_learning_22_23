@@ -67,7 +67,18 @@ class FeedforwardNetwork(nn.Module):
         includes modules for several activation functions and dropout as well.
         """
         super().__init__()
-        # Implement me!
+
+        # Structure size for this NN
+        struct_size = [n_features] + [hidden_size for _ in range(layers)] + [n_classes]
+
+        # Logits for each layer
+        self.layer_logits = nn.ParameterList([nn.Linear(struct_size[l], struct_size[l+1]) 
+                                                for l in range(len(struct_size) - 1)])
+
+        # Activation function and dropout rate for all layers
+        self.activation = nn.ReLU() if activation_type == 'relu' else nn.Tanh()
+        self.dropout = nn.Dropout(dropout)
+
 
     def forward(self, x, **kwargs):
         """
@@ -77,7 +88,18 @@ class FeedforwardNetwork(nn.Module):
         the output logits from x. This will include using various hidden
         layers, pointwise nonlinear functions, and dropout.
         """
-        raise NotImplementedError
+        
+        n_layers = len(list(self.layer_logits))
+
+        # Feed forward propagation
+        h = x
+        for l in range(n_layers):
+            h = self.dropout(h)         # apply dropout regularization
+            z = self.layer_logits[l](h) # score on layer l
+            h = self.activation(z)      # ignoring on output layer
+
+        return z
+
 
 
 def train_batch(X, y, model, optimizer, criterion, **kwargs):
@@ -157,7 +179,7 @@ def main():
                         help="Size of training batch.")
     parser.add_argument('-learning_rate', type=float, default=0.01)
     parser.add_argument('-l2_decay', type=float, default=0)
-    parser.add_argument('-hidden_sizes', type=int, default=100)
+    parser.add_argument('-hidden_size', type=int, default=100)
     parser.add_argument('-layers', type=int, default=1)
     parser.add_argument('-dropout', type=float, default=0.3)
     parser.add_argument('-activation',
