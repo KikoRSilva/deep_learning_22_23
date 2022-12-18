@@ -27,9 +27,8 @@ class LogisticRegression(nn.Module):
         https://pytorch.org/docs/stable/nn.html
         """
         super().__init__()
-        # In a pytorch module, the declarations of layers needs to come after
-        # the super __init__ line, otherwise the magic doesn't work.
         self.linear = nn.Linear(n_features, n_classes, bias=True)
+
 
     def forward(self, x, **kwargs):
         """
@@ -68,7 +67,7 @@ class FeedforwardNetwork(nn.Module):
         """
         super().__init__()
 
-        # Structure size for this NN
+        # Structure size for this NN architecture
         struct_size = [n_features] + [hidden_size for _ in range(layers)] + [n_classes]
 
         # Logits for each layer
@@ -91,7 +90,7 @@ class FeedforwardNetwork(nn.Module):
         
         n_layers = len(list(self.layer_logits))
 
-        # Feed forward propagation
+        # Feed-forward propagation
         h = x
         for l in range(n_layers):
             h = self.dropout(h)         # apply dropout regularization
