@@ -17,9 +17,24 @@ def configure_seed(seed):
     random.seed(seed)
     np.random.seed(seed)
 
+# Auxiliary functions
+
+def one_hot_vector(y, n_classes):
+    one_hot = np.zeros(n_classes)
+    one_hot[y] = 1
+    return one_hot.T
+
 def softmax(x):
     f = x - np.max(x)
     return np.exp(f) / np.sum(np.exp(f))
+
+def relu(x):
+    return np.maximum(0, x)
+
+def reluDerivative(x):
+    return (x > 0) * 1
+
+# Models
 
 class LinearModel(object):
     def __init__(self, n_classes, n_features, **kwargs):
@@ -75,12 +90,6 @@ class Perceptron(LinearModel):
 
 
 class LogisticRegression(LinearModel):
-    
-    def one_hot_vector(self, y):
-        n_classes = self.W.shape[0]
-        one_hot = np.zeros((n_classes, 1))
-        one_hot[y] = 1
-        return one_hot
 
     def update_weight(self, x_i, y_i, learning_rate=0.001):
         """
@@ -90,7 +99,7 @@ class LogisticRegression(LinearModel):
         """
 
         class_probs = softmax(np.dot(self.W, x_i.T)[:, None])
-        y_one_hot = self.one_hot_vector(y_i)
+        y_one_hot = one_hot_vector(y_i, self.W.shape[0])[:, None]
 
         grad_i = (y_one_hot - class_probs) * x_i[None, :]
 
@@ -113,10 +122,9 @@ class MLP(object):
             self.weights.append(np.random.normal(loc=0.1, scale=0.1, size=(struct_size[l+1], struct_size[l])))
             self.biases.append(np.zeros(struct_size[l+1]))
 
-        #self.g = lambda z: np.maximum(0, z)                 # relu activation function for hidden layers
-        self.g = np.tanh
-        self.d_g = lambda z: (z > 0) * 1                    # derivate for g
-        self.o = softmax                                    # softmax activation function for output layer
+        self.g = relu                       # activation function for hidden layers
+        self.d_g = reluDerivative           # derivate for g
+        self.o = softmax                    # activation function for output layer
 
         self.loss = lambda y, prd_probs: -y.dot(np.log(prd_probs))  # cross-entropy loss fuction
         self.grad_loss = lambda y, prd_probs: prd_probs - y         # gradient of this loss function
@@ -160,13 +168,16 @@ class MLP(object):
             for l in range(self.n_layers - 1):
                 z = np.dot(self.weights[l], hidden_values[l][1] if l > 0 else x_i) + self.biases[l]
                 hidden_values.append((z, self.g(z)))
+
             z_output = np.dot(self.weights[-1], hidden_values[-1][1]) + self.biases[-1]
+            
             prd_probs = self.o(z_output)
+            y_one_hot = one_hot_vector(y_i, z_output.shape[0])
+
             # error = self.loss(y_i, prd_probs)
 
-
             # BACKWARD PROPAGATION
-            grad_z = self.grad_loss(y_i, prd_probs)
+            grad_z = self.grad_loss(y_one_hot, prd_probs)
 
             for l in range(self.n_layers - 1, -1, -1):
                 h = x_i if l == 0 else hidden_values[l-1][1]
@@ -176,7 +187,7 @@ class MLP(object):
 
                 if l > 0:
                     grad_h = np.dot(self.weights[l].T, grad_z)
-                    grad_z = grad_h * (1-h**2)  # derivate for relu does not work
+                    grad_z = grad_h * self.d_g(hidden_values[l-1][0])
 
 
                 self.weights[l] -= learning_rate * grad_w

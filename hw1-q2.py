@@ -71,8 +71,10 @@ class FeedforwardNetwork(nn.Module):
         struct_size = [n_features] + [hidden_size for _ in range(layers)] + [n_classes]
 
         # Logits for each layer
-        self.layer_logits = nn.ParameterList([nn.Linear(struct_size[l], struct_size[l+1]) 
-                                                for l in range(len(struct_size) - 1)])
+        self.layer_logits = nn.ParameterList([
+            nn.Linear(struct_size[l], struct_size[l+1], bias=True) 
+                        for l in range(len(struct_size) - 1)
+        ])
 
         # Activation function and dropout rate for all layers
         self.activation = nn.ReLU() if activation_type == 'relu' else nn.Tanh()
