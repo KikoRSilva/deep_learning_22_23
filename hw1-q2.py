@@ -95,9 +95,9 @@ class FeedforwardNetwork(nn.Module):
         # Feed-forward propagation
         h = x
         for l in range(n_layers):
-            h = self.dropout(h)         # apply dropout regularization
             z = self.layer_logits[l](h) # score on layer l
-            h = self.activation(z)      # ignoring on output layer
+            h = self.activation(z)      # apply activation (ignoring h on output layer)
+            h = self.dropout(h)         # apply dropout regularization between hidden layers
 
         return z
 
