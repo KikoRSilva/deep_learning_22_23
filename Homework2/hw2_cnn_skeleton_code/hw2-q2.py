@@ -165,6 +165,8 @@ def plot_feature_maps(model, train_dataset):
     data.unsqueeze_(0)
     output = model(data)
 
+    # print(output)
+    plt.figure()
     plt.imshow(data.reshape(28,-1)) 
     plt.savefig('original_image.png')
 
