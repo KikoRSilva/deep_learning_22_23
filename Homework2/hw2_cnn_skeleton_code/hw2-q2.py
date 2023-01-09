@@ -27,17 +27,17 @@ class CNN(nn.Module):
         super(CNN, self).__init__()
 
         # x -> 784 entries -> 28x28 image (x 1 channel)
-        self.conv1 = nn.Conv2d(1, 8, kernel_size=5, stride=1)
-        # z1 -> 24x24 image (x 8 channels)
+        self.conv1 = nn.Conv2d(1, 8, kernel_size=5, stride=1, padding=2)
+        # z1 -> 28x28 image (x 8 channels)
         self.conv1_act = nn.ReLU()
         self.conv1_pool = nn.MaxPool2d(kernel_size=2, stride=2)
-        # h1 -> 12x12 image (x 8 channels)
-        self.conv2 = nn.Conv2d(8, 16, kernel_size=3, stride=1, padding_mode="zeros")
-        # z2 -> 10x10 image (x 16 channels)
+        # h1 -> 14x14 image (x 8 channels)
+        self.conv2 = nn.Conv2d(8, 16, kernel_size=3, stride=1, padding=0)
+        # z2 -> 12x12 image (x 16 channels)
         self.conv2_act = nn.ReLU()
         self.conv2_pool = nn.MaxPool2d(kernel_size=2, stride=2)
-        # h2 -> 5x5 image (x 16 channels) -> 400 entries 
-        self.fc1 = nn.Linear(400, 600, bias=True)
+        # h2 -> 6x6 image (x 16 channels) -> 576 entries 
+        self.fc1 = nn.Linear(576, 600, bias=True)
         self.fc1_act = nn.ReLU()
         self.fc1_drop = nn.Dropout(dropout_prob) # 0.3 for the question
         
@@ -70,12 +70,10 @@ class CNN(nn.Module):
 
         # x => CONV 1 => RELU 1 => MAX_POOL 1 => h1
         h1 = self.conv1_pool(self.conv1_act(self.conv1(x)))
-
         # h1 => CONV 2 => RELU 2 => MAX_POOL 2 => h2
         h2 = self.conv2_pool(self.conv2_act(self.conv2(h1)))
-        
         # h2 => Flatten => FC => LogSoftmax => output
-        h2_flatten = h2.view(-1, 400)
+        h2_flatten = h2.view(-1, 576)
         h3 = self.fc1_drop(self.fc1_act(self.fc1(h2_flatten)))
         h4 = self.fc2_act(self.fc2(h3))
         output = self.out_act(self.out(h4))
