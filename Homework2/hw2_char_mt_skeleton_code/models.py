@@ -2,9 +2,21 @@ import torch
 import torch.nn as nn
 from torch.nn.utils.rnn import pack_padded_sequence as pack
 from torch.nn.utils.rnn import pad_packed_sequence as unpack
+from typing import Optional, Tuple
 
 
-def reshape_state(state):
+def reshape_state(state: Tuple[torch.Tensor, torch.Tensor]) -> Tuple[torch.Tensor, torch.Tensor]:
+    """
+    Reshape the hidden state of a bidirectional LSTM.
+    
+    Args:
+        state: Tuple of hidden states, (h_state, c_state) each with shape 
+               (num_layers * num_directions, batch_size, hidden_size)
+               
+    Returns:
+        new_state: Tuple of reshaped hidden states, (new_h_state, new_c_state) each with shape
+                   (num_layers, batch_size, 2*hidden_size)
+    """
     h_state = state[0]
     c_state = state[1]
     new_h_state = torch.cat([h_state[:-1], h_state[1:]], dim=2)
@@ -15,23 +27,30 @@ def reshape_state(state):
 class Attention(nn.Module):
     def __init__(
         self,
-        hidden_size,
+        hidden_size: int,
     ):
-
+        """
+        Luong et al. general attention (https://arxiv.org/pdf/1508.04025.pdf)
+        Args:
+            hidden_size: the size of hidden feature
+        """
         super(Attention, self).__init__()
-        "Luong et al. general attention (https://arxiv.org/pdf/1508.04025.pdf)"
         self.linear_in = nn.Linear(hidden_size, hidden_size, bias=False)
         self.linear_out = nn.Linear(hidden_size * 2, hidden_size)
 
     def forward(
-        self,
-        query,
-        encoder_outputs,
-        src_lengths,
-    ):
-        # query: (batch_size, 1, hidden_dim)
-        # encoder_outputs: (batch_size, max_src_len, hidden_dim)
-        # src_lengths: (batch_size)
+        self, query:torch.Tensor, encoder_outputs:torch.Tensor, src_lengths:torch.Tensor
+    ) -> torch.Tensor:
+        """
+        Computes the attention output.
+        
+        Args:
+            query: Tensor of shape (batch_size, 1, hidden_size) representing the current decoder state
+            encoder_outputs: Tensor of shape (batch_size, max_src_len, hidden_size) representing the encoder outputs
+            src_lengths: Tensor of shape (batch_size) representing the length of each input sequence
+        Returns:
+            attn_out: Tensor of shape (batch_size, 1, hidden_size) representing the attention output
+        """
         query = query.squeeze(1)
         attn = torch.bmm(encoder_outputs, self.W(query).unsqueeze(-1)) # (batch_size, max_src_len, 1)
         attention_mask = ~self.sequence_mask(src_lengths)
@@ -42,9 +61,16 @@ class Attention(nn.Module):
         attn_out = torch.tanh(self.linear_out(torch.cat((query, context), dim=-1))).unsqueeze(1)
         return attn_out
 
-    def sequence_mask(self, lengths):
+    def sequence_mask(self, lengths: torch.Tensor) -> torch.Tensor:
         """
         Creates a boolean mask from sequence lengths.
+        
+        Args:
+            lengths: Tensor of shape (batch_size) representing the length of each sequence
+            
+        Returns:
+            mask: Tensor of shape (batch_size, max_len) containing the boolean mask, where False
+                  indicates that a certain position in the sequence is padded.
         """
         batch_size = lengths.numel()
         max_len = lengths.max()
@@ -57,13 +83,8 @@ class Attention(nn.Module):
 
 
 class Encoder(nn.Module):
-    def __init__(
-        self,
-        src_vocab_size,
-        hidden_size,
-        padding_idx,
-        dropout,
-    ):
+    def __init__(self, src_vocab_size: int, hidden_size: int, 
+        padding_idx: int, dropout: float) -> None:
         super(Encoder, self).__init__()
         self.hidden_size = hidden_size // 2
         self.dropout = dropout
@@ -81,11 +102,19 @@ class Encoder(nn.Module):
         )
         self.dropout = nn.Dropout(self.dropout)
 
-    def forward(
-        self,
-        src,
-        lengths,
-    ):
+    def forward(self, src:torch.Tensor, lengths:torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Perform a forward pass on the input.
+        
+        Args:
+            src: Tensor of shape (batch_size, max_src_len) representing the input sequences
+            lengths: Tensor of shape (batch_size) representing the length of each input sequence
+            
+        Returns:
+            outputs: Tensor of shape (batch_size, max_src_len, hidden_size) representing the encoder outputs
+            hidden: Tuple of two tensors, each of shape (num_layers * num_directions, batch_size, hidden_size)
+                      representing the hidden state of the LSTM
+        """
         embedded = self.dropout(self.embedding(src))
         packed = pack(embedded, lengths, batch_first=True, enforce_sorted=False)
         outputs, hidden = self.lstm(packed)
@@ -96,14 +125,7 @@ class Encoder(nn.Module):
 
 
 class Decoder(nn.Module):
-    def __init__(
-        self,
-        hidden_size,
-        tgt_vocab_size,
-        attn,
-        padding_idx,
-        dropout,
-    ):
+    def __init__(self, hidden_size: int, tgt_vocab_size: int, attn: Attention, padding_idx: int, dropout: float):
         super(Decoder, self).__init__()
         self.hidden_size = hidden_size
         self.tgt_vocab_size = tgt_vocab_size
@@ -122,21 +144,23 @@ class Decoder(nn.Module):
 
         self.attn = attn
 
-    def forward(
-        self,
-        tgt,
-        dec_state,
-        encoder_outputs,
-        src_lengths,
-    ):
-        # tgt: (batch_size, max_tgt_len)
-        # dec_state: tuple with 2 tensors
-        # each tensor is (num_layers * num_directions, batch_size, hidden_size)
-        # encoder_outputs: (batch_size, max_src_len, hidden_size)
-        # src_lengths: (batch_size)
-        # bidirectional encoder outputs are concatenated, so we may need to
-        # reshape the decoder states to be of size (num_layers, batch_size, 2*hidden_size)
-        # if they are of size (num_layers*num_directions, batch_size, hidden_size)
+    def forward(self, tgt: torch.Tensor, dec_state: Tuple[torch.Tensor, torch.Tensor], 
+        encoder_outputs: torch.Tensor, src_lengths:torch.Tensor
+        ) -> Tuple[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
+        """
+        Perform a forward pass on the input.
+        
+        Args:
+            tgt: Tensor of shape (batch_size, max_tgt_len) representing the target sequences
+            dec_state: Tuple of two tensors, each of shape (num_layers * num_directions, batch_size, hidden_size)
+                        representing the hidden state of the LSTM
+            encoder_outputs: Tensor of shape (batch_size, max_src_len, hidden_size) representing the encoder outputs
+            src_lengths: Tensor of shape (batch_size) representing the length of each input sequence
+        
+        Returns:
+            outputs: Tensor of shape (batch_size* max_tgt_len, hidden_size) representing the decoder outputs after applying attention mechanism
+            dec_state: Tuple of two tensors, each of shape (num_layers, batch_size, hidden_size) representing the hidden state of the LSTM
+        """
         if dec_state[0].shape[0] == 2:
             dec_state = reshape_state(dec_state)
         tgt = tgt.unsqueeze(0) if len(tgt.shape) == 1 else tgt
@@ -149,11 +173,14 @@ class Decoder(nn.Module):
 
 
 class Seq2Seq(nn.Module):
-    def __init__(
-        self,
-        encoder,
-        decoder,
-    ):
+    def __init__(self, encoder: Encoder, decoder: Decoder):
+        """
+        Initialize the Seq2Seq model.
+        
+        Args:
+            encoder: An instance of the Encoder class
+            decoder: An instance of the Decoder class
+        """
         super(Seq2Seq, self).__init__()
 
         self.encoder = encoder
@@ -163,14 +190,23 @@ class Seq2Seq(nn.Module):
 
         self.generator.weight = self.decoder.embedding.weight
 
-    def forward(
-        self,
-        src,
-        src_lengths,
-        tgt,
-        dec_hidden=None,
-    ):
-
+    def forward(self, src: torch.Tensor, src_lengths:torch.Tensor, tgt: torch.Tensor, 
+        dec_hidden: Optional[Tuple[torch.Tensor, torch.Tensor]] = None
+        ) -> Tuple[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
+        """
+        Perform a forward pass on the input.
+        
+        Args:
+            src: Tensor of shape (batch_size, max_src_len) representing the input sequences
+            src_lengths: Tensor of shape (batch_size) representing the length of each input sequence
+            tgt: Tensor of shape (batch_size, max_tgt_len) representing the target sequences
+            dec_hidden: Tuple of two tensors, each of shape (num_layers, batch_size, hidden_size)
+                         representing the hidden state of the LSTM
+        
+        Returns:
+            output: Tensor of shape (batch_size* max_tgt_len, tgt_vocab_size) representing the generated sequence after applying attention mechanism and Linear Layer
+            dec_hidden: Tuple of two tensors, each of shape (num_layers, batch_size, hidden_size) representing the hidden state of the LSTM
+        """
         encoder_outputs, final_enc_state = self.encoder(src, src_lengths)
 
         if dec_hidden is None:
