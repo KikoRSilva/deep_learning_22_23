@@ -52,7 +52,7 @@ class Attention(nn.Module):
             attn_out: Tensor of shape (batch_size, 1, hidden_size) representing the attention output
         """
         query = query.squeeze(1)
-        attn = torch.bmm(encoder_outputs, self.W(query).unsqueeze(-1)) # (batch_size, max_src_len, 1)
+        attn = torch.bmm(encoder_outputs, self.linear_in(query).unsqueeze(-1)) # (batch_size, max_src_len, 1)
         attention_mask = ~self.sequence_mask(src_lengths)
         attention_mask = attention_mask.to(attn.device)
         attn.data.masked_fill_(attention_mask.unsqueeze(-1), -float('inf'))
