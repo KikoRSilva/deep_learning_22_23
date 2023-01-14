@@ -45,20 +45,19 @@ class Attention(nn.Module):
         Computes the attention output.
         
         Args:
-            query: Tensor of shape (batch_size, 1, hidden_size) representing the current decoder state
+            query: Tensor of shape (batch_size, max_tgt,len, hidden_size) representing the current decoder state
             encoder_outputs: Tensor of shape (batch_size, max_src_len, hidden_size) representing the encoder outputs
             src_lengths: Tensor of shape (batch_size) representing the length of each input sequence
         Returns:
-            attn_out: Tensor of shape (batch_size, 1, hidden_size) representing the attention output
+            attn_out: Tensor of shape (batch_size, max_tgt_len, hidden_size) representing the attention output
         """
-        query = query.squeeze(1)
-        attn = torch.bmm(encoder_outputs, self.linear_in(query).unsqueeze(-1)) # (batch_size, max_src_len, 1)
+        attn = torch.bmm(self.linear_in(query), encoder_outputs.transpose(1, 2))
         attention_mask = ~self.sequence_mask(src_lengths)
         attention_mask = attention_mask.to(attn.device)
-        attn.data.masked_fill_(attention_mask.unsqueeze(-1), -float('inf'))
-        attention_weights = torch.softmax(attn, dim=1)
-        context = torch.bmm(attention_weights, encoder_outputs).squeeze(1)
-        attn_out = torch.tanh(self.linear_out(torch.cat((query, context), dim=-1))).unsqueeze(1)
+        m = attn.masked_fill(attention_mask.unsqueeze(1), -float('inf'))
+        attention_weights = torch.softmax(m, 2)
+        context = torch.bmm(attention_weights, encoder_outputs)
+        attn_out = torch.tanh(self.linear_out(torch.cat((query, context), dim=2)))
         return attn_out
 
     def sequence_mask(self, lengths: torch.Tensor) -> torch.Tensor:
@@ -118,8 +117,7 @@ class Encoder(nn.Module):
         embedded = self.dropout(self.embedding(src))
         packed = pack(embedded, lengths, batch_first=True, enforce_sorted=False)
         outputs, hidden = self.lstm(packed)
-        outputs, _ = unpack(outputs)
-        outputs = outputs[:, :, :self.hidden_size] + outputs[:, :, self.hidden_size:]
+        outputs, _ = unpack(outputs, batch_first=True)
         outputs = self.dropout(outputs)
         return outputs, hidden
 
@@ -163,12 +161,17 @@ class Decoder(nn.Module):
         """
         if dec_state[0].shape[0] == 2:
             dec_state = reshape_state(dec_state)
-        tgt = tgt.unsqueeze(0) if len(tgt.shape) == 1 else tgt
-        if tgt.shape[1] > 1:
-            tgt = tgt[:,:-1]
-        embedded = self.dropout(self.embedding(tgt))
+
+        x = tgt.clone().detach()
+
+        if x.shape[1] > 1:
+            x = x[:,:-1]
+            
+        embedded = self.dropout(self.embedding(x))
         output, dec_state = self.lstm(embedded, dec_state)
-        outputs = self.dropout(output.contiguous().view(-1, self.lstm.hidden_size))
+        if self.attn is not None:
+            output = self.attn(output, encoder_outputs, src_lengths)
+        outputs = self.dropout(output)
         return outputs, dec_state
 
 
